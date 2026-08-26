@@ -339,6 +339,23 @@ print("=" * 60)
 
 print(coefficients[['Feature', 'Coefficient']])
 
+# ── Multicollinearity caveat: flag highly correlated feature pairs so
+# their individual coefficients aren't over-interpreted (required derived
+# features like Efficiency_Ratio can end up near-duplicates of raw ones) ──
+feature_corr = X.corr()
+high_corr_pairs = [
+    (feature_corr.columns[i], feature_corr.columns[j], feature_corr.iloc[i, j])
+    for i in range(len(feature_corr.columns))
+    for j in range(i + 1, len(feature_corr.columns))
+    if abs(feature_corr.iloc[i, j]) > 0.7
+]
+if high_corr_pairs:
+    print("\nMULTICOLLINEARITY CAVEAT (|r| > 0.7):")
+    print("Coefficients for these feature pairs should be interpreted jointly,")
+    print("not individually - each pair carries overlapping information.")
+    for a, b, r in sorted(high_corr_pairs, key=lambda p: -abs(p[2])):
+        print(f"  {a} <-> {b}  (r = {r:.3f})")
+
 # ── Threshold tuning: maximize precision subject to recall >= 85% (action plan target) ──
 TARGET_RECALL = 0.85
 y_prob_log = log_model.predict_proba(X_test)[:, 1]
