@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
@@ -256,6 +256,48 @@ for name, model in models.items():
     print(f"  Precision (defect): {results[name]['report']['1']['precision']*100:.2f}%")
     print(f"  Recall (defect):    {results[name]['report']['1']['recall']*100:.2f}%")
     print(f"  F1 Score (defect):  {results[name]['report']['1']['f1-score']*100:.2f}%")
+
+# ─────────────────────────────────────────────
+# 4B. HYPERPARAMETER TUNING
+# ─────────────────────────────────────────────
+print("\n" + "=" * 60)
+print("STEP 4B: Hyperparameter Tuning")
+print("=" * 60)
+
+tuning_grids = {
+    'Logistic Regression': (
+        LogisticRegression(max_iter=1000, random_state=42),
+        {'C': [0.01, 0.1, 1, 10, 100], 'class_weight': [None, 'balanced']}
+    ),
+    'Random Forest': (
+        RandomForestClassifier(random_state=42),
+        {'n_estimators': [100, 200], 'max_depth': [None, 15],
+         'min_samples_split': [2, 5]}
+    ),
+    'Decision Tree': (
+        DecisionTreeClassifier(random_state=42),
+        {'max_depth': [5, 10, 15, None], 'min_samples_split': [2, 5, 10]}
+    ),
+}
+
+for name, (estimator, param_grid) in tuning_grids.items():
+    print(f"\nTuning {name}...")
+    grid = GridSearchCV(estimator, param_grid, scoring='roc_auc', cv=3, n_jobs=-1)
+    grid.fit(X_train_smote, y_train_smote)
+    print(f"  Best params: {grid.best_params_}")
+    print(f"  Best CV AUC: {grid.best_score_:.4f}")
+
+    tuned_model = grid.best_estimator_
+    y_pred = tuned_model.predict(X_test)
+    results[name] = {
+        'model': tuned_model,
+        'y_pred': y_pred,
+        'report': classification_report(y_test, y_pred, output_dict=True)
+    }
+    print(f"  Test Accuracy: {results[name]['report']['accuracy']*100:.2f}%")
+    print(f"  Test Precision (defect): {results[name]['report']['1']['precision']*100:.2f}%")
+    print(f"  Test Recall (defect):    {results[name]['report']['1']['recall']*100:.2f}%")
+    print(f"  Test F1 Score (defect):  {results[name]['report']['1']['f1-score']*100:.2f}%")
 
 # ============================================================
 # LOGISTIC REGRESSION ANALYSIS
