@@ -19,6 +19,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 from tensorflow.keras.callbacks import EarlyStopping
 from imblearn.over_sampling import SMOTE
+from imblearn.pipeline import Pipeline as ImbPipeline
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -273,27 +274,36 @@ print("=" * 60)
 tuning_grids = {
     'Logistic Regression': (
         LogisticRegression(max_iter=1000, random_state=42),
-        {'C': [0.01, 0.1, 1, 10, 100], 'class_weight': [None, 'balanced']}
+        {'clf__C': [0.01, 0.1, 1, 10, 100], 'clf__class_weight': [None, 'balanced']}
     ),
     'Random Forest': (
         RandomForestClassifier(random_state=42),
-        {'n_estimators': [100, 200], 'max_depth': [None, 15],
-         'min_samples_split': [2, 5]}
+        {'clf__n_estimators': [100, 200], 'clf__max_depth': [None, 15],
+         'clf__min_samples_split': [2, 5]}
     ),
     'Decision Tree': (
         DecisionTreeClassifier(random_state=42),
-        {'max_depth': [5, 10, 15, None], 'min_samples_split': [2, 5, 10]}
+        {'clf__max_depth': [5, 10, 15, None], 'clf__min_samples_split': [2, 5, 10]}
     ),
 }
 
+# SMOTE must be refit inside each CV fold, not applied once beforehand -
+# otherwise synthetic points and the real neighbors they were interpolated
+# from can land in different folds, leaking information across the CV split
+# and inflating the reported CV score (confirmed: this previously showed
+# Random Forest at 0.996 CV AUC vs its real 0.877 test AUC).
 for name, (estimator, param_grid) in tuning_grids.items():
     print(f"\nTuning {name}...")
-    grid = GridSearchCV(estimator, param_grid, scoring='roc_auc', cv=3, n_jobs=-1)
-    grid.fit(X_train_smote, y_train_smote)
+    pipe = ImbPipeline([
+        ('smote', SMOTE(random_state=42)),
+        ('clf', estimator)
+    ])
+    grid = GridSearchCV(pipe, param_grid, scoring='roc_auc', cv=3, n_jobs=-1)
+    grid.fit(X_train, y_train)  # raw (pre-SMOTE) training data
     print(f"  Best params: {grid.best_params_}")
     print(f"  Best CV AUC: {grid.best_score_:.4f}")
 
-    tuned_model = grid.best_estimator_
+    tuned_model = grid.best_estimator_.named_steps['clf']
     y_pred = tuned_model.predict(X_test)
     results[name] = {
         'model': tuned_model,
