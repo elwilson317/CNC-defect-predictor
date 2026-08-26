@@ -31,6 +31,12 @@ print("=" * 60)
 
 df = pd.read_excel('cncmilingdata2023-2026.xlsx',
                    sheet_name='Sensor_Data')
+
+# The source file is NOT in chronological order (rows jump between years
+# arbitrarily). Rolling averages, .diff(), and the LSTM sequence windows
+# all assume row order == time order, so sort by Timestamp first.
+df = df.sort_values('Timestamp').reset_index(drop=True)
+
 numeric_cols = [
     'Spindle_Speed_RPM',
     'Feed_Rate_mm_per_min',
