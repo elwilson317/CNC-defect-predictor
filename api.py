@@ -110,7 +110,11 @@ def classify_failure_mode(reading: dict, probability: float):
     elif reading['Power_Consumption_kW'] > 7:
         return "SPINDLE LOAD ANOMALY"
     else:
-        return "ANOMALOUS OPERATING PATTERN" if probability >= 0.70 else "NORMAL OPERATION"
+        # Anchor to the tuned decision threshold, not a fixed 0.70 - otherwise
+        # a reading flagged DEFECT (probability >= decision_threshold) but
+        # below 0.70 would show as "NORMAL OPERATION", contradicting the
+        # prediction shown alongside it.
+        return "ANOMALOUS OPERATING PATTERN" if probability >= decision_threshold else "NORMAL OPERATION"
 
 
 def generate_maintenance_report(reading: dict, probability: float):
@@ -136,11 +140,14 @@ def generate_maintenance_report(reading: dict, probability: float):
         causes.append("Abnormal Machine Vibration")
         actions.append("Inspect bearings, spindle and machine alignment")
 
+    # MEDIUM's floor is the tuned decision threshold (not a fixed 0.50) so
+    # that any reading the model predicts as DEFECT (probability >=
+    # decision_threshold) is never reported as LOW priority.
     if probability > 0.90:
         priority = "CRITICAL"
     elif probability > 0.70:
         priority = "HIGH"
-    elif probability > 0.50:
+    elif probability >= decision_threshold:
         priority = "MEDIUM"
     else:
         priority = "LOW"

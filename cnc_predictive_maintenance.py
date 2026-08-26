@@ -557,7 +557,11 @@ def classify_failure_mode(sensor_reading,probability):
         return "SPINDLE LOAD ANOMALY"
 
     else:
-        if probability >= 0.70:
+        # Anchor to the tuned decision threshold, not a fixed 0.70 - otherwise
+        # a reading the ML model flags as DEFECT (probability >= log_threshold)
+        # but below 0.70 would fall through to "NORMAL OPERATION", contradicting
+        # the prediction shown alongside it.
+        if probability >= log_threshold:
             return "ANOMALOUS OPERATING PATTERN"
 
         return "NORMAL OPERATION"
@@ -593,11 +597,14 @@ def generate_maintenance_report(sensor_reading, probability):
     ):
         causes.append("Abnormal Machine Vibration")
         actions.append("Inspect bearings, spindle and machine alignment")
+    # MEDIUM's floor is the tuned decision threshold (not a fixed 0.50) so
+    # that any reading the model predicts as DEFECT (probability >=
+    # log_threshold) is never reported as LOW priority.
     if probability > 0.90:
         priority = "CRITICAL"
     elif probability > 0.70:
         priority = "HIGH"
-    elif probability > 0.50:
+    elif probability >= log_threshold:
         priority = "MEDIUM"
     else:
         priority = "LOW"
