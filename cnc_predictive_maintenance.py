@@ -51,6 +51,11 @@ numeric_cols = [
 
 for col in numeric_cols:
     df[col] = pd.to_numeric(df[col], errors='coerce')
+
+# Clip physically impossible values from synthetic data generation
+df['Tool_Wear_Percent'] = df['Tool_Wear_Percent'].clip(0, 100)
+df['Surface_Roughness_Ra_um'] = df['Surface_Roughness_Ra_um'].clip(lower=0)
+
 print(df.dtypes)
 print(f"Dataset shape: {df.shape}")
 print(f"\nFirst 5 rows:\n{df.head()}")
@@ -132,18 +137,19 @@ print("\nTarget: Defect_Label (0=Normal, 1=Defective)")
 print(f"\nClass distribution:\n{y.value_counts()}")
 print(f"Defect rate: {y.mean()*100:.1f}%")
 
-# Normalise features
-scaler = StandardScaler()
-X_scaled = pd.DataFrame(scaler.fit_transform(X), columns=X.columns)
-
-# Train/test split (80/20)
-X_train, X_test, y_train, y_test = train_test_split(
-    X_scaled,
+# Train/test split (80/20) — split BEFORE scaling to avoid data leakage
+X_train_raw, X_test_raw, y_train, y_test = train_test_split(
+    X,
     y,
     test_size=0.2,
     random_state=42,
     stratify=y
 )
+
+# Normalise features — fit scaler on training data only
+scaler = StandardScaler()
+X_train = pd.DataFrame(scaler.fit_transform(X_train_raw), columns=X.columns)
+X_test = pd.DataFrame(scaler.transform(X_test_raw), columns=X.columns)
 
 print("\nBefore SMOTE:")
 print(pd.Series(y_train).value_counts())
@@ -393,8 +399,8 @@ def check_alerts(row):
                 alerts.append(f" HIGH {sensor}: {val:.2f} (threshold: <{threshold})")
     return alerts
 
-# Also use the best ML model (Random Forest) for prediction
-best_model = results['Random Forest']['model']
+# Use Logistic Regression for live prediction/alerting (project focus model)
+best_model = results['Logistic Regression']['model']
 
 # -----------------------------
 # Feature Engineering
@@ -517,7 +523,6 @@ def predict_and_alert(sensor_reading: dict):
 
     probability = best_model.predict_proba(input_scaled)[0][1]
     prediction = 1 if probability >= 0.70 else 0
-    probability = best_model.predict_proba(input_scaled)[0][1]
 
     print(f"\n ML Prediction: {'⛔ DEFECT DETECTED' if prediction == 1 else ' NORMAL'}")
     print(f"   Defect Probability: {probability*100:.1f}%")
@@ -637,12 +642,24 @@ print("=" * 60)
 
 sequence_length = 20
 
+# LSTM uses a time-ordered split, so scale using only the temporal
+# training portion to avoid leaking future data into the fit.
+lstm_split_idx = int(len(X) * 0.8)
+lstm_scaler = StandardScaler()
+X_scaled_lstm = pd.DataFrame(
+    np.vstack([
+        lstm_scaler.fit_transform(X.iloc[:lstm_split_idx]),
+        lstm_scaler.transform(X.iloc[lstm_split_idx:])
+    ]),
+    columns=X.columns
+)
+
 X_seq = []
 y_seq = []
 
-for i in range(len(X_scaled) - sequence_length):
+for i in range(len(X_scaled_lstm) - sequence_length):
     X_seq.append(
-        X_scaled.iloc[i:i+sequence_length].values
+        X_scaled_lstm.iloc[i:i+sequence_length].values
     )
 
     y_seq.append(
