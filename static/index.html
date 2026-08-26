@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CNC Predictive Maintenance Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1420;
+    --panel: #161d2e;
+    --panel-border: #263049;
+    --text: #e6e9f0;
+    --muted: #8b93a7;
+    --blue: #3b82f6;
+    --green: #22c55e;
+    --amber: #f59e0b;
+    --red: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--panel-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 {
+    font-size: 18px;
+    margin: 0;
+    font-weight: 600;
+  }
+  header .sub {
+    color: var(--muted);
+    font-size: 13px;
+    margin-top: 2px;
+  }
+  .controls { display: flex; gap: 10px; align-items: center; }
+  button {
+    background: var(--blue);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  button:hover { opacity: 0.9; }
+  button.secondary { background: var(--panel-border); color: var(--text); }
+  label.toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  main {
+    padding: 24px 28px;
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    min-width: 0;
+  }
+  @media (max-width: 700px) {
+    main { grid-template-columns: 1fr; padding: 16px; }
+    .sensor-grid { grid-template-columns: 1fr; }
+    header { flex-direction: column; align-items: flex-start; gap: 12px; }
+  }
+  .panel h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin: 0 0 14px;
+  }
+  .sensor-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 20px;
+  }
+  .sensor-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--panel-border);
+  }
+  .sensor-item .name { color: var(--muted); }
+  .sensor-item .val { font-variant-numeric: tabular-nums; }
+  .sensor-item.alert .val { color: var(--red); font-weight: 600; }
+
+  .prob-row { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+  .prob-value { font-size: 40px; font-weight: 700; }
+  .badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+  }
+  .badge.CRITICAL { background: rgba(239,68,68,0.15); color: var(--red); }
+  .badge.HIGH { background: rgba(245,158,11,0.15); color: var(--amber); }
+  .badge.MEDIUM { background: rgba(245,158,11,0.1); color: var(--amber); }
+  .badge.LOW { background: rgba(34,197,94,0.15); color: var(--green); }
+
+  .bar-track {
+    height: 8px;
+    background: var(--panel-border);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 18px;
+  }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s ease; }
+
+  .kv { font-size: 13px; margin-bottom: 6px; }
+  .kv .label { color: var(--muted); }
+
+  ul.plain { list-style: none; padding: 0; margin: 6px 0 0; }
+  ul.plain li {
+    font-size: 13px;
+    padding: 4px 0 4px 16px;
+    position: relative;
+  }
+  ul.plain li::before {
+    content: "\2022";
+    position: absolute;
+    left: 0;
+    color: var(--blue);
+  }
+
+  .alerts-box {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--amber);
+  }
+  .alerts-box div { padding: 2px 0; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 8px;
+    border-bottom: 1px solid var(--panel-border);
+    white-space: nowrap;
+  }
+  th { color: var(--muted); font-weight: 500; }
+  .history-panel { grid-column: 1 / -1; overflow-x: auto; }
+  .pill {
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .pill.DEFECT { background: rgba(239,68,68,0.15); color: var(--red); }
+  .pill.NORMAL { background: rgba(34,197,94,0.15); color: var(--green); }
+  .empty { color: var(--muted); font-size: 13px; padding: 12px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>CNC Milling Machine &mdash; Predictive Maintenance</h1>
+    <div class="sub">Live sensor monitoring &middot; Logistic Regression model</div>
+  </div>
+  <div class="controls">
+    <label class="toggle">
+      <input type="checkbox" id="autoToggle">
+      Auto-refresh (5s)
+    </label>
+    <button class="secondary" id="clearBtn">Clear history</button>
+    <button id="simulateBtn">Simulate reading</button>
+  </div>
+</header>
+
+<main>
+  <div class="panel">
+    <h2>Current Sensor Reading</h2>
+    <div id="sensorGrid" class="sensor-grid"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Prediction</h2>
+    <div class="prob-row">
+      <div class="prob-value" id="probValue">&mdash;</div>
+      <span class="badge" id="priorityBadge">&mdash;</span>
+    </div>
+    <div class="bar-track"><div class="bar-fill" id="probBar" style="width:0%"></div></div>
+
+    <div class="kv"><span class="label">Failure mode:</span> <strong id="failureMode">&mdash;</strong></div>
+
+    <div class="kv" style="margin-top:14px;"><span class="label">Root causes</span></div>
+    <ul class="plain" id="rootCauses"></ul>
+
+    <div class="kv" style="margin-top:14px;"><span class="label">Recommended actions</span></div>
+    <ul class="plain" id="actions"></ul>
+
+    <div class="alerts-box" id="alertsBox"></div>
+  </div>
+
+  <div class="panel history-panel">
+    <h2>Alert History</h2>
+    <table id="historyTable">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Prediction</th>
+          <th>Probability</th>
+          <th>Priority</th>
+          <th>Failure Mode</th>
+          <th>Root Causes</th>
+        </tr>
+      </thead>
+      <tbody id="historyBody"></tbody>
+    </table>
+    <div class="empty" id="historyEmpty" style="display:none;">No readings yet &mdash; click "Simulate reading" to start.</div>
+  </div>
+</main>
+
+<script>
+const SENSOR_LABELS = {
+  Spindle_Speed_RPM: "Spindle Speed (RPM)",
+  Feed_Rate_mm_per_min: "Feed Rate (mm/min)",
+  Cutting_Depth_mm: "Cutting Depth (mm)",
+  Vibration_X_mm_s: "Vibration X (mm/s)",
+  Vibration_Y_mm_s: "Vibration Y (mm/s)",
+  Vibration_Z_mm_s: "Vibration Z (mm/s)",
+  Spindle_Temp_C: "Spindle Temp (°C)",
+  Coolant_Temp_C: "Coolant Temp (°C)",
+  Coolant_Flow_L_per_min: "Coolant Flow (L/min)",
+  Power_Consumption_kW: "Power Consumption (kW)",
+  Tool_Wear_Percent: "Tool Wear (%)",
+  Acoustic_Emission_dB: "Acoustic Emission (dB)",
+  Servo_Load_X_Percent: "Servo Load X (%)",
+  Servo_Load_Y_Percent: "Servo Load Y (%)",
+  Servo_Load_Z_Percent: "Servo Load Z (%)",
+  Surface_Roughness_Ra_um: "Surface Roughness (µm)",
+};
+
+let autoTimer = null;
+
+function priorityColor(priority) {
+  return { CRITICAL: "#ef4444", HIGH: "#f59e0b", MEDIUM: "#f59e0b", LOW: "#22c55e" }[priority] || "#8b93a7";
+}
+
+function renderReading(result) {
+  const grid = document.getElementById("sensorGrid");
+  grid.innerHTML = "";
+  const alertedSensors = new Set(
+    result.threshold_alerts.map(a => a.split(":")[0].replace("HIGH ", "").replace("LOW ", "").trim())
+  );
+  for (const [key, label] of Object.entries(SENSOR_LABELS)) {
+    const val = result.sensor_reading[key];
+    const div = document.createElement("div");
+    div.className = "sensor-item" + (alertedSensors.has(key) ? " alert" : "");
+    div.innerHTML = `<span class="name">${label}</span><span class="val">${val.toFixed(2)}</span>`;
+    grid.appendChild(div);
+  }
+
+  document.getElementById("probValue").textContent = result.defect_probability.toFixed(1) + "%";
+  const badge = document.getElementById("priorityBadge");
+  badge.textContent = result.priority;
+  badge.className = "badge " + result.priority;
+
+  const bar = document.getElementById("probBar");
+  bar.style.width = result.defect_probability + "%";
+  bar.style.background = priorityColor(result.priority);
+
+  document.getElementById("failureMode").textContent = result.failure_mode;
+
+  const causesEl = document.getElementById("rootCauses");
+  causesEl.innerHTML = result.root_causes.length
+    ? result.root_causes.map(c => `<li>${c}</li>`).join("")
+    : "<li>No critical root causes detected</li>";
+
+  const actionsEl = document.getElementById("actions");
+  actionsEl.innerHTML = result.recommended_actions.length
+    ? result.recommended_actions.map(a => `<li>${a}</li>`).join("")
+    : "<li>Continue routine monitoring</li>";
+
+  const alertsBox = document.getElementById("alertsBox");
+  let alertsHtml = "";
+  if (result.early_warning) {
+    alertsHtml += `<div>⚠ EARLY WARNING &mdash; potential degradation detected, inspection recommended.</div>`;
+  }
+  if (result.threshold_alerts.length) {
+    alertsHtml += result.threshold_alerts.map(a => `<div>⚠ ${a}</div>`).join("");
+  }
+  alertsBox.innerHTML = alertsHtml;
+}
+
+function renderHistory(items) {
+  const body = document.getElementById("historyBody");
+  const empty = document.getElementById("historyEmpty");
+  if (!items.length) {
+    body.innerHTML = "";
+    empty.style.display = "block";
+    return;
+  }
+  empty.style.display = "none";
+  body.innerHTML = items.map(r => {
+    const time = new Date(r.timestamp).toLocaleTimeString();
+    const pillClass = r.prediction === "DEFECT DETECTED" ? "DEFECT" : "NORMAL";
+    return `<tr>
+      <td>${time}</td>
+      <td><span class="pill ${pillClass}">${r.prediction}</span></td>
+      <td>${r.defect_probability.toFixed(1)}%</td>
+      <td>${r.priority}</td>
+      <td>${r.failure_mode}</td>
+      <td>${r.root_causes.join(", ") || "&mdash;"}</td>
+    </tr>`;
+  }).join("");
+}
+
+async function refreshHistory() {
+  const res = await fetch("/api/history?limit=50");
+  const items = await res.json();
+  renderHistory(items);
+}
+
+async function simulate() {
+  const res = await fetch("/api/simulate");
+  const result = await res.json();
+  renderReading(result);
+  await refreshHistory();
+}
+
+document.getElementById("simulateBtn").addEventListener("click", simulate);
+
+document.getElementById("clearBtn").addEventListener("click", async () => {
+  await fetch("/api/history", { method: "DELETE" });
+  await refreshHistory();
+});
+
+document.getElementById("autoToggle").addEventListener("change", (e) => {
+  if (e.target.checked) {
+    autoTimer = setInterval(simulate, 5000);
+  } else {
+    clearInterval(autoTimer);
+  }
+});
+
+// Initial load
+refreshHistory();
+</script>
+
+</body>
+</html>

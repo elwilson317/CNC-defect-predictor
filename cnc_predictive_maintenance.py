@@ -20,6 +20,7 @@ from tensorflow.keras.layers import LSTM, Dense, Dropout
 from tensorflow.keras.callbacks import EarlyStopping
 from imblearn.over_sampling import SMOTE
 from imblearn.pipeline import Pipeline as ImbPipeline
+import joblib
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -509,6 +510,17 @@ def check_alerts(row):
 
 # Use Logistic Regression for live prediction/alerting (project focus model)
 best_model = results['Logistic Regression']['model']
+
+# Save trained artifacts for the web dashboard API, so it doesn't need
+# to retrain (including the slow LSTM step) on every startup.
+joblib.dump({
+    'model': best_model,
+    'scaler': scaler,
+    'feature_columns': list(X.columns),
+    'decision_threshold': log_threshold,
+    'thresholds': THRESHOLDS,
+}, 'model_bundle.joblib')
+print("\nModel bundle saved -> model_bundle.joblib")
 
 # -----------------------------
 # Feature Engineering
